@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	crio_proto "gRPC-CRI/crio/proto"
+	"gRPC-CRI/conn_tools"
+	crio_proto "gRPC-CRI/crio/proto/parser"
+	reflection_crio "gRPC-CRI/crio/proto/reflection"
 	"log"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // condition
@@ -38,6 +42,8 @@ func (p *ProtosDir) Set(value string) (err error) {
 // Methods started with low case, they are not accesible aoutside package
 
 func main() {
+	// Root context
+	ctx := context.Background()
 	var protos ProtosDir
 	grpc_service := flag.String("service", "", "CRI-O gRPC service to request information")
 	flag.Var(&protos, "import-proto", "Proto's file comma separated list")
@@ -45,17 +51,22 @@ func main() {
 	verbose_ptr := flag.Bool("verbose", false, "verbose mode")
 	flag.Parse()
 
-	// TODO: Host:Port argument, must be the unique non-parse flaged and is used without it
-	log.Printf("" + fmt.Sprintf("%s", flag.Args()))
-
 	// After processing flags, only remains non-flagged arguments, programm name is not included also on flag.Args() --> 2025/04/18 03:47:33 [unix:///var/lib/crio/crio.sock]
 	if flag.NArg() != 1 {
 		log.Fatal("Host is missing")
 	}
 
+	// check if host is reachable
 	host := flag.Arg(0)
+	test_conn := &conn_tools.ConnTools{
+		Host:    host,
+		Timeout: time.Duration(*timeout) * time.Second,
+	}
 
-	// TODO: specified if unix socket as flag or implement parsing all address (add rule that if user want unix socket, Host must be unix:// ...)
+	if !test_conn.ConnHost(ctx) {
+		log.Fatal("Cannot reach host" + host)
+	}
+
 	if *verbose_ptr {
 		// convert interface{} to string also %v	the value in a default format
 		log.Printf("service : " + fmt.Sprintf("%v", _c(grpc_service == nil)._d("", *grpc_service)))
@@ -69,11 +80,18 @@ func main() {
 	}
 
 	if grpc_service == nil || *grpc_service == "" {
-		log.Fatal("gRPC service is missing")
+		log.Printf("gRPC service is missing, just listing methods")
 	}
 
-	//
-	parser := &crio_proto.ParserProto{Verbose: *verbose_ptr, Reflection: &crio_proto.Reflection{Host: host, Required: len(protos) == 0}}
-	parser.ManagedProtoFile(protos...)
+	parser := &crio_proto.ParserProto{
+		Verbose: *verbose_ptr,
+		Reflection: &reflection_crio.Reflection{
+			Host:     host,
+			Required: len(protos) == 0,
+			Timeout:  time.Duration(*timeout) * time.Second,
+		},
+	}
+
+	parser.ManageProtoFile(ctx, protos)
 
 }

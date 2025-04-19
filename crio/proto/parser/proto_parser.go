@@ -1,6 +1,8 @@
 package crio_proto
 
 import (
+	"context"
+	reflection_crio "gRPC-CRI/crio/proto/reflection"
 	"log"
 	"os"
 
@@ -9,41 +11,48 @@ import (
 )
 
 // Becareful, fields need it on others packages should start with Uppercase !!
-// If Reflection type was reflection, it could not be exported to other packages
-type Reflection struct {
-	Host     string
-	Required bool
-}
-
-// Becareful, fields need it on others packages should start with Uppercase !!
 type ParserProto struct {
 	Verbose bool
 	// embebido: Go promueve automáticamente los campos de Reflection a ParserProto.
 	// Es decir, podés acceder a parser.URL o parser.Need directamente sin escribir parser.Reflection.URL.
-	*Reflection
+	*reflection_crio.Reflection
 }
 
-// ellipsis
-func (p *ParserProto) ManagedProtoFile(paths ...string) (err error) {
-
+func (p *ParserProto) ManageProtoFile(ctx context.Context, paths []string) (q []parser.Proto, err error) {
+	localCtx, cancel := context.WithTimeout(ctx, p.Timeout)
+	defer cancel()
 	if p.Required {
 		if p.Verbose {
 			log.Printf("Starting reflection gRPC request")
 		}
-		// TODO: implementar reflection
+		p.Reflection.GetProtos(localCtx)
+	} else {
+		q, err = localProtosFiles(paths...)
 	}
 
+	return q, err
+}
+
+// ellipsis and not accesible from other packages
+func localProtosFiles(paths ...string) (q []parser.Proto, err error) {
+	q = make([]parser.Proto, 0)
 	for _, path := range paths {
-		p.ParseProtoFile(path)
+		parser, err := parseProtoFile(path)
+		if err != nil {
+			break
+		}
+		q = append(q, *parser)
 	}
-	return nil
+
+	return q, err
 }
 
 // --> := is for new assigments, instead = is for previously declared vars on context, such as proto and err
 // --> becareful, cannot collision packages names of imported packages with local packages, previously this local
+// non accesible form other packages
 //
 //	package was called proto and github.com/yoheimuta/go-protoparser/v4/parser has also a proto package that we need to rference it.
-func (p *ParserProto) ParseProtoFile(path string) (parse_file *parser.Proto, err error) {
+func parseProtoFile(path string) (parse_file *parser.Proto, err error) {
 	file, err := os.OpenFile(path, os.O_RDONLY, 0644)
 	if err != nil {
 		return nil, err
