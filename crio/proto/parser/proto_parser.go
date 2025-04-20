@@ -10,11 +10,8 @@ import (
 	"github.com/yoheimuta/go-protoparser/v4/parser"
 )
 
-// Becareful, fields need it on others packages should start with Uppercase !!
 type ParserProto struct {
 	Verbose bool
-	// embebido: Go promueve automáticamente los campos de Reflection a ParserProto.
-	// Es decir, podés acceder a parser.URL o parser.Need directamente sin escribir parser.Reflection.URL.
 	*reflection_crio.Reflection
 }
 
