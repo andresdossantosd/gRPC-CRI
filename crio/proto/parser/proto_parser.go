@@ -15,14 +15,14 @@ type ParserProto struct {
 	*reflection_crio.Reflection
 }
 
-func (p *ParserProto) ManageProtoFile(ctx context.Context, paths []string) (q []parser.Proto, err error) {
+func (p *ParserProto) ManageProtoFile(ctx context.Context, invoke_method string, paths []string) (q []parser.Proto, err error) {
 	localCtx, cancel := context.WithTimeout(ctx, p.Timeout)
 	defer cancel()
 	if p.Required {
 		if p.Verbose {
 			log.Printf("Starting reflection gRPC request")
 		}
-		p.Reflection.GetProtos(localCtx)
+		p.Reflection.GetProtos(localCtx, invoke_method)
 	} else {
 		q, err = localProtosFiles(paths...)
 	}

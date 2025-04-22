@@ -45,7 +45,7 @@ func main() {
 	// Root context
 	ctx := context.Background()
 	var protos ProtosDir
-	grpc_service := flag.String("service", "", "CRI-O gRPC service to request information")
+	grpc_method := flag.String("method", "", "CRI-O gRPC method to request information")
 	flag.Var(&protos, "import-proto", "Proto's file comma separated list")
 	timeout := flag.Int("timeout", 15, "gRPC connection timeout")
 	verbose_ptr := flag.Bool("verbose", false, "verbose mode")
@@ -69,7 +69,7 @@ func main() {
 
 	if *verbose_ptr {
 		// convert interface{} to string also %v	the value in a default format
-		log.Printf("service : " + fmt.Sprintf("%v", _c(grpc_service == nil)._d("", *grpc_service)))
+		log.Printf("service : " + fmt.Sprintf("%v", _c(grpc_method == nil)._d("", *grpc_method)))
 		log.Printf("import-proto : " + fmt.Sprintf("%s", protos))
 		log.Printf("timeout : " + strconv.FormatInt(int64(*timeout), 10))
 	}
@@ -79,7 +79,7 @@ func main() {
 		log.Printf("Missed import-prot, gRPC reflection it is going to be used")
 	}
 
-	if grpc_service == nil || *grpc_service == "" {
+	if grpc_method == nil || *grpc_method == "" {
 		log.Printf("gRPC service is missing, just listing methods")
 	}
 
@@ -92,6 +92,6 @@ func main() {
 		},
 	}
 
-	parser.ManageProtoFile(ctx, protos)
+	parser.ManageProtoFile(ctx, *grpc_method, protos)
 
 }
