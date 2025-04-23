@@ -56,8 +56,11 @@ func searchMethodMsgTypev1Alpha(proto_msg_types []*descriptorpb.DescriptorProto,
 			if *(msg_types.Name) == msg_input {
 				// TODO: Terminar de parsear fields, que ahora sean los fields normales
 				/*
+					Method{
+					InputParameter: [field, field, field] --> field = {label, type, name} --> array de campos, porque un message type puede tener varios
 
-				 */
+					}
+				*/
 				for _, fields := range msg_types.Field {
 					grpc_param.Input = &Field{
 						Name:  *fields.Name,
