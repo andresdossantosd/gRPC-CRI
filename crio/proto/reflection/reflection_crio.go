@@ -20,31 +20,62 @@ type Reflection struct {
 	Required bool
 }
 
+type Field struct {
+	Label string
+	Type  string
+	Name  string
+}
+
 type Method_Param struct {
-	Input  string
-	Output string
+	Input  []*Field
+	Output []*Field
+	Name   string
 }
 
 type Method struct {
-	Parameters    *Method_Param
-	Client_stream bool
-	Server_stream bool
+	InputParameter  *Method_Param
+	OutputParameter *Method_Param
+	ClientStream    bool
+	ServerStream    bool
 }
 
 func searchMethodMsgTypev1Alpha(proto_msg_types []*descriptorpb.DescriptorProto, msg_input string, msg_output string) (grpc_param *Method_Param) {
+	// TODO: Obtener todos los fields de un message, su tipo y ponerlo en un json
 	for _, msg_types := range proto_msg_types {
 		if msg_types.Name == nil {
 			continue
 		}
 		if *(msg_types.Name) == msg_input || *(msg_types.Name) == msg_output {
 			if grpc_param == nil {
-				grpc_param = &Method_Param{}
+				grpc_param = &Method_Param{
+					Input:  []*Field{},
+					Output: []*Field{},
+					Name:   "",
+				}
 			}
 			if *(msg_types.Name) == msg_input {
-				grpc_param.Input = msg_input
+				// TODO: Terminar de parsear fields, que ahora sean los fields normales
+				/*
+
+				 */
+				for _, fields := range msg_types.Field {
+					grpc_param.Input = &Field{
+						Name:  *fields.Name,
+						Type:  fields.Type.String(),
+						Label: fields.Label.String(),
+					}
+				}
+				grpc_param.Name = msg_input
 			}
 			if *(msg_types.Name) == msg_output {
-				grpc_param.Output = msg_output
+				for _, fields := range msg_types.Field {
+					grpc_param.Output = &Field{
+						Name:  *fields.Name,
+						Type:  fields.Type.String(),
+						Label: fields.Label.String(),
+					}
+				}
+				grpc_param.Name = msg_output
 			}
 		}
 	}
@@ -153,6 +184,7 @@ func (r *Reflection) GetProtos(ctx context.Context, invoke_method string) (metho
 	// TODO: format response based on user service it wants to execute
 	// TODO: create logging package to print logs if verbose active
 	// TODO: logging with verbose
+	// TODO: obtener de Method_Param un json o proto de los Input e Output
 	services, err := listServicesv1Alpha(&stream_grpc)
 	for _, service := range services {
 		method_obj, err = listServicesMethodsv1Alpha(&stream_grpc, service.Name, invoke_method)
