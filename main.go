@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"gRPC-CRI/conn_tools"
@@ -45,6 +46,8 @@ func main() {
 	// Root context
 	ctx := context.Background()
 	var protos ProtosDir
+
+	// all defined flags are technically optional. There is no mandatory concept
 	grpc_method := flag.String("method", "", "CRI-O gRPC method to request information")
 	flag.Var(&protos, "import-proto", "Proto's file comma separated list")
 	timeout := flag.Int("timeout", 15, "gRPC connection timeout")
@@ -53,6 +56,7 @@ func main() {
 
 	// After processing flags, only remains non-flagged arguments, programm name is not included also on flag.Args() --> 2025/04/18 03:47:33 [unix:///var/lib/crio/crio.sock]
 	if flag.NArg() != 1 {
+		// if no host, fatal !
 		log.Fatal("Host is missing")
 	}
 
@@ -92,6 +96,10 @@ func main() {
 		},
 	}
 
-	parser.ManageProtoFile(ctx, *grpc_method, protos)
-
+	grpcServices, err := parser.ManageProtoFile(ctx, grpc_method, protos)
+	if err != nil {
+		log.Fatal("Cannot list services due to: " + err.Error())
+	}
+	grpcServicesJson, _ := json.MarshalIndent(grpcServices, "", "  ")
+	fmt.Println(string(grpcServicesJson))
 }
