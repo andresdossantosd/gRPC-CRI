@@ -2,7 +2,9 @@ package reflection_crio
 
 import (
 	"context"
+	"gRPC-CRI/crio/proto/elem_crio"
 	"log"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -20,65 +22,45 @@ type Reflection struct {
 	Required bool
 }
 
-type Field struct {
-	Label string
-	Type  string
-	Name  string
-}
+func searchMethodMsgTypev1Alpha(proto_msg_types []*descriptorpb.DescriptorProto, msg_input string, msg_output string) (method_ipts_outs *elem_crio.MethodInfo) {
 
-type Method_Param struct {
-	Input  []*Field
-	Output []*Field
-	Name   string
-}
-
-type Method struct {
-	InputParameter  *Method_Param
-	OutputParameter *Method_Param
-	ClientStream    bool
-	ServerStream    bool
-}
-
-func searchMethodMsgTypev1Alpha(proto_msg_types []*descriptorpb.DescriptorProto, msg_input string, msg_output string) (grpc_param *Method_Param) {
-	// TODO: Obtener todos los fields de un message, su tipo y ponerlo en un json
 	for _, msg_types := range proto_msg_types {
 		if msg_types.Name == nil {
 			continue
 		}
-		if *(msg_types.Name) == msg_input || *(msg_types.Name) == msg_output {
-			if grpc_param == nil {
-				grpc_param = &Method_Param{
-					Input:  []*Field{},
-					Output: []*Field{},
-					Name:   "",
-				}
-			}
-			if *(msg_types.Name) == msg_input {
-				// TODO: Terminar de parsear fields, que ahora sean los fields normales
-				/*
-					Method{
-					InputParameter: [field, field, field] --> field = {label, type, name} --> array de campos, porque un message type puede tener varios
 
-					}
-				*/
-				for _, fields := range msg_types.Field {
-					grpc_param.Input = &Field{
-						Name:  *fields.Name,
-						Type:  fields.Type.String(),
-						Label: fields.Label.String(),
-					}
+		// Why HasSuffix ? msg_input and msg_output are obtained by calling method.GetInputType(), this will return input/output message type including package.<message> (package.message_name)
+		if strings.HasSuffix(msg_input, *msg_types.Name) || strings.HasSuffix(msg_output, *msg_types.Name) {
+			if method_ipts_outs == nil {
+				method_ipts_outs = &elem_crio.MethodInfo{
+					Input:   []*elem_crio.Field{},
+					Output:  []*elem_crio.Field{},
+					NameIn:  "",
+					NameOut: "",
 				}
-				grpc_param.Name = msg_input
 			}
-			if *(msg_types.Name) == msg_output {
+			if "."+*(msg_types.Name) == msg_input {
+				// protobuf3, each message field has name, type and label (optional, required or repeated)
 				for _, fields := range msg_types.Field {
-					grpc_param.Output = &Field{
-						Name:  *fields.Name,
-						Type:  fields.Type.String(),
-						Label: fields.Label.String(),
-					}
+					method_ipts_outs.Input = append(method_ipts_outs.Input, &elem_crio.Field{
+						Name:   *fields.Name,
+						Type:   strings.ToLower(strings.Replace(fields.Type.String(), "TYPE_", "", 1)),
+						Label:  strings.ToLower(strings.Replace(fields.Label.String(), "LABEL_", "", 1)),
+						Number: *fields.Number,
+					})
 				}
-				grpc_param.Name = msg_output
+				method_ipts_outs.NameIn = *msg_types.Name
+			}
+			if "."+*(msg_types.Name) == msg_output {
+				for _, fields := range msg_types.Field {
+					method_ipts_outs.Output = append(method_ipts_outs.Output, &elem_crio.Field{
+						Name:   *fields.Name,
+						Type:   strings.ToLower(strings.Replace(fields.Type.String(), "TYPE_", "", 1)),
+						Label:  strings.ToLower(strings.Replace(fields.Label.String(), "LABEL_", "", 1)),
+						Number: *fields.Number,
+					})
+				}
+				method_ipts_outs.NameOut = *msg_types.Name
 			}
 		}
 	}
@@ -86,7 +68,7 @@ func searchMethodMsgTypev1Alpha(proto_msg_types []*descriptorpb.DescriptorProto,
 }
 
 // return how to call method
-func listServicesMethodsv1Alpha(stream_grpc *grpc.ClientStream, service string, invoke_method string) (method_obj *Method, err error) {
+func listServicesMethodsv1Alpha(stream_grpc *grpc.ClientStream, service string, invoke_method *string) (method_obj []*elem_crio.Method, err error) {
 
 	req := &grpc_reflection_v1alpha.ServerReflectionRequest{
 		MessageRequest: &grpc_reflection_v1alpha.ServerReflectionRequest_FileContainingSymbol{
@@ -121,18 +103,21 @@ func listServicesMethodsv1Alpha(stream_grpc *grpc.ClientStream, service string, 
 		}
 		for _, svc := range proto_file.GetService() {
 			for _, method := range svc.GetMethod() {
-				if method.GetName() == invoke_method {
-					method_params := searchMethodMsgTypev1Alpha(proto_file.GetMessageType(), method.GetInputType(), method.GetOutputType())
-					return &Method{
-						Parameters:    method_params,
-						Client_stream: method.GetClientStreaming(),
-						Server_stream: method.GetServerStreaming(),
-					}, nil
+				if *invoke_method != "" && *method.Name != *invoke_method {
+					continue
 				}
+				// get inputs/outputs message types and their structure
+				method_spec := searchMethodMsgTypev1Alpha(proto_file.GetMessageType(), method.GetInputType(), method.GetOutputType())
+				method_obj = append(method_obj, &elem_crio.Method{
+					Name:         *method.Name,
+					MethodSpec:   method_spec,
+					ClientStream: method.GetClientStreaming(),
+					ServerStream: method.GetServerStreaming(),
+				})
 			}
 		}
 	}
-	return method_obj, nil
+	return
 
 }
 
@@ -162,7 +147,8 @@ func listServicesv1Alpha(stream_grpc *grpc.ClientStream) (services []*grpc_refle
 	return services, err
 }
 
-func (r *Reflection) GetProtos(ctx context.Context, invoke_method string) (method_obj *Method, err error) {
+func (r *Reflection) GetProtosServices(ctx context.Context, invoke_method *string) (grpc_services []*elem_crio.Service, err error) {
+
 	// Get ClientConn Object
 	insecure_creds := insecure.NewCredentials()
 	conn, err := grpc.NewClient(r.Host, grpc.WithTransportCredentials(insecure_creds))
@@ -177,6 +163,7 @@ func (r *Reflection) GetProtos(ctx context.Context, invoke_method string) (metho
 		ServerStreams: true,
 		ClientStreams: true,
 	}
+
 	// Bidirectional streaming RPC for reflection service (stream key word on params and response on proto file)
 	stream_grpc, err := conn.NewStream(ctx, desc, gRPC_METHOD)
 	if err != nil {
@@ -187,16 +174,21 @@ func (r *Reflection) GetProtos(ctx context.Context, invoke_method string) (metho
 	// TODO: format response based on user service it wants to execute
 	// TODO: create logging package to print logs if verbose active
 	// TODO: logging with verbose
-	// TODO: obtener de Method_Param un json o proto de los Input e Output
+	// TODO: obtener de MethodInfo un json o proto de los Input e Output
 	services, err := listServicesv1Alpha(&stream_grpc)
+	var methods []*elem_crio.Method
 	for _, service := range services {
-		method_obj, err = listServicesMethodsv1Alpha(&stream_grpc, service.Name, invoke_method)
-		if err != nil || method_obj == nil {
+
+		methods, err = listServicesMethodsv1Alpha(&stream_grpc, service.Name, invoke_method)
+		if err != nil || methods == nil {
 			continue
 		} else {
-			return method_obj, nil
+			grpc_services = append(grpc_services, &elem_crio.Service{
+				Methods: methods,
+				Name:    service.Name,
+			})
 		}
 
 	}
-	return nil, err
+	return
 }
